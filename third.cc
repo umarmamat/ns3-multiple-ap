@@ -23,6 +23,7 @@
 #include "ns3/internet-module.h"
 #include "ns3/yans-wifi-helper.h"
 #include "ns3/ssid.h"
+#include "ns3/netanim-module.h"
 
 // Default Network Topology
 //
@@ -43,7 +44,7 @@ int
 main (int argc, char *argv[])
 {
   bool verbose = true;
-  uint32_t nCsma = 3;
+  uint32_t nCsma = 2;
   uint32_t nWifi = 3;
   bool tracing = false;
 
@@ -69,7 +70,7 @@ main (int argc, char *argv[])
       LogComponentEnable ("UdpEchoClientApplication", LOG_LEVEL_INFO);
       LogComponentEnable ("UdpEchoServerApplication", LOG_LEVEL_INFO);
     }
-
+ // wifi ap1
   NodeContainer p2pNodes;
   p2pNodes.Create (2);
 
@@ -170,16 +171,122 @@ main (int argc, char *argv[])
   clientApps.Stop (Seconds (10.0));
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+//wifi 2  ******
+  NodeContainer p2pNodes1;
+  p2pNodes1.Create (2);
 
+  PointToPointHelper pointToPoint1;
+  pointToPoint1.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
+  pointToPoint1.SetChannelAttribute ("Delay", StringValue ("2ms"));
+
+  NetDeviceContainer p2pDevices1;
+  p2pDevices1 = pointToPoint1.Install (p2pNodes1);
+
+  NodeContainer csmaNodes1;
+  csmaNodes1.Add (p2pNodes1.Get (1));
+  csmaNodes1.Create (nCsma1);
+
+  CsmaHelper csma1;
+  csma1.SetChannelAttribute ("DataRate", StringValue ("100Mbps"));
+  csma1.SetChannelAttribute ("Delay", TimeValue (NanoSeconds (6560)));
+
+  NetDeviceContainer csmaDevices1;
+  csmaDevices1 = csma1.Install (csmaNodes1);
+
+  NodeContainer wifiStaNodes1;
+  wifiStaNodes1.Create (nWifi);
+  NodeContainer wifiApNode1 = p2pNodes1.Get (0);
+
+  YansWifiChannelHelper channel1 = YansWifiChannelHelper::Default ();
+  YansWifiPhyHelper phy1 = YansWifiPhyHelper::Default ();
+  phy1.SetChannel (channel1.Create ());
+
+  WifiHelper wifi1;
+  wifi1.SetRemoteStationManager ("ns3::AarfWifiManager");
+
+  WifiMacHelper mac1;
+  Ssid ssid1 = Ssid ("ns-3-ssid");
+  mac1.SetType ("ns3::StaWifiMac",
+               "Ssid", SsidValue (ssid1),
+               "ActiveProbing", BooleanValue (false));
+
+  NetDeviceContainer staDevices1;
+  staDevices1 = wifi1.Install (phy1, mac1, wifiStaNodes1);
+
+  mac1.SetType ("ns3::ApWifiMac",
+               "Ssid", SsidValue (ssid1));
+
+  NetDeviceContainer apDevices1;
+  apDevices1 = wifi1.Install (phy1, mac1, wifiApNode1);
+
+  MobilityHelper mobility1;
+
+  mobility1.SetPositionAllocator ("ns3::GridPositionAllocator",
+                                 "MinX", DoubleValue (0.0),
+                                 "MinY", DoubleValue (0.0),
+                                 "DeltaX", DoubleValue (5.0),
+                                 "DeltaY", DoubleValue (10.0),
+                                 "GridWidth", UintegerValue (3),
+                                 "LayoutType", StringValue ("RowFirst"));
+
+  mobility1.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
+                             "Bounds", RectangleValue (Rectangle (-50, 50, -50, 50)));
+  mobility1.Install (wifiStaNodes1);
+
+  mobility1.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  mobility1.Install (wifiApNode1);
+
+  InternetStackHelper stack1;
+  stack1.Install (csmaNodes1);
+  stack1.Install (wifiApNode1);
+  stack1.Install (wifiStaNodes1);
+
+  Ipv4AddressHelper address1;
+
+  address1.SetBase ("10.1.1.1", "255.255.255.0");
+  Ipv4InterfaceContainer p2pInterfaces1;
+  p2pInterfaces1 = address1.Assign (p2pDevices1);
+
+  address1.SetBase ("10.1.2.2", "255.255.255.0");
+  Ipv4InterfaceContainer csmaInterfaces1;
+  csmaInterfaces1 = address1.Assign (csmaDevices1);
+
+  address1.SetBase ("10.1.3.3", "255.255.255.0");
+  address1.Assign (staDevices1);
+  address1.Assign (apDevices1);
+
+  UdpEchoServerHelper echoServer1 (9);
+
+  ApplicationContainer serverApps1 = echoServer1.Install (csmaNodes1.Get (nCsma));
+  serverApps1.Start (Seconds (1.0));
+  serverApps1.Stop (Seconds (10.0));
+
+  UdpEchoClientHelper echoClient1 (csmaInterfaces1.GetAddress (nCsma), 9);
+  echoClient1.SetAttribute ("MaxPackets", UintegerValue (1));
+  echoClient1.SetAttribute ("Interval", TimeValue (Seconds (1.0)));
+  echoClient1.SetAttribute ("PacketSize", UintegerValue (1024));
+
+  ApplicationContainer clientApps1 = 
+    echoClient1.Install (wifiStaNodes1.Get (nWifi - 1));
+  clientApps1.Start (Seconds (2.0));
+  clientApps1.Stop (Seconds (10.0));
+
+  Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+  ///// end
   Simulator::Stop (Seconds (10.0));
 
   if (tracing == true)
     {
+      //1
       pointToPoint.EnablePcapAll ("third");
       phy.EnablePcap ("third", apDevices.Get (0));
       csma.EnablePcap ("third", csmaDevices.Get (0), true);
+      //2
+      pointToPoint1.EnablePcapAll ("third1");
+      phy1.EnablePcap ("third1", apDevices1.Get (0));
+      csma1.EnablePcap ("third1", csmaDevices1.Get (0), true);
     }
-
+  AnimationInterface anim ("wifi two.xml");
   Simulator::Run ();
   Simulator::Destroy ();
   return 0;
